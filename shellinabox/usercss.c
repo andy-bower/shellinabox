@@ -45,6 +45,7 @@
 
 #include "config.h"
 
+#include <dirent.h>
 #include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -117,10 +118,17 @@ static void endUserCSSGroup(struct UserCSSGroupState *groupState) {
   memset(groupState, '\0', sizeof *groupState);
 }
 
-void addUserCSSList(struct UserCSS **tailCSS, const char *arg, struct UserCSSGroupState *groupState) {
+struct UserCSS **addUserCSSList(struct UserCSS **tailCSS, const char *arg, struct UserCSSGroupState *groupState) {
   struct UserCSS *userCSS;
 
   while (*arg) {
+    // Handle end of group
+    if (*arg == ';') {
+      endUserCSSGroup(groupState);
+      arg++;
+      continue;
+    }
+
     // Add new node list
     check(userCSS = malloc(sizeof(struct UserCSS)));
     *tailCSS = userCSS;
@@ -190,12 +198,8 @@ void addUserCSSList(struct UserCSS **tailCSS, const char *arg, struct UserCSSGro
                    &userCSS->styleLen);
     free(filename);
     arg                                   = colon + 1 + filenameLen;
-
-    // Handle end of group
-    if (*arg && *arg++ == ';') {
-      endUserCSSGroup(groupState);
-    }
   }
+  return tailCSS;
 }
 
 void parseUserCSS(struct UserCSS **userCSSList, const char *arg) {
@@ -203,6 +207,46 @@ void parseUserCSS(struct UserCSS **userCSSList, const char *arg) {
 
   for (tail = userCSSList; *tail; tail = &(*tail)->next);
   addUserCSSList(tail, arg, &groupState);
+}
+
+void readUserCSSDir(struct UserCSS **userCSSList, const char *path) {
+  DIR *dir;
+  struct UserCSS **tail;
+  char *last_id = strdup("");
+
+  for (tail = userCSSList; *tail; tail = &(*tail)->next);
+  check((dir = opendir(path)));
+  struct dirent *de;
+  const char *arg_fmt = "%s%s:%c%s/%s";
+  while ((de = readdir(dir))) {
+    char *id_sep, *name, *arg;
+    int sz, new_id = 0;
+    char *ext = strrchr(de->d_name, '.');
+    if (!ext || strcmp(ext, ".css")) {
+      continue; // Ignore
+    }
+    for (id_sep = de->d_name; *id_sep && !strchr("-+_", *id_sep); id_sep++);
+    if (!*id_sep) {
+      fatal("[config] No '+', '-' or '_' separator after style ID!");
+    }
+    if (strncmp(de->d_name, last_id, id_sep - de->d_name)) {
+      free(last_id);
+      last_id = strndup(de->d_name, id_sep - de->d_name);
+      new_id = 1;
+    }
+    name = strndup(id_sep + 1, ext - id_sep - 1);
+    check((sz = snprintf(NULL, 0, arg_fmt, " ", name,
+                         '_', path, de->d_name), '_') != -1);
+    check((arg = malloc(sz + 1)));
+    check((sz = snprintf(arg, sz + 1, arg_fmt,
+                         new_id ? ";" : "", name,
+                         *id_sep == '_' ? '-': *id_sep, path, de->d_name)) != -1);
+    free(name);
+    tail = addUserCSSList(tail, arg, &groupState);
+    free(arg);
+  }
+  free(last_id);
+  closedir(dir);
 }
 
 void destroyUserCSS(struct UserCSS *userCSS) {

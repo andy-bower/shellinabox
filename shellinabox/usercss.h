@@ -64,6 +64,7 @@ struct UserCSSGroupState {
 void initUserCSS(struct UserCSS *userCSS, const char *arg);
 struct UserCSS *newUserCSS(const char *arg);
 void parseUserCSS(struct UserCSS **userCSSList, const char *arg);
+void readUserCSSDir(struct UserCSS **userCSSList, const char *path);
 void destroyUserCSS(struct UserCSS *userCSS);
 void deleteUserCSS(struct UserCSS *userCSS);
 char *getUserCSSString(struct UserCSS *userCSS);
