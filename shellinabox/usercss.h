@@ -55,6 +55,12 @@ struct UserCSS {
   size_t         styleLen;
 };
 
+struct UserCSSGroupState {
+  int groupOpen;
+  int numMembers;
+  int hasActiveMember;
+};
+
 void initUserCSS(struct UserCSS *userCSS, const char *arg);
 struct UserCSS *newUserCSS(const char *arg);
 void parseUserCSS(struct UserCSS **userCSSList, const char *arg);

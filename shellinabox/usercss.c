@@ -65,6 +65,7 @@
 #define UNUSED(x)    do { (void)(x); } while (0)
 #endif
 
+static struct UserCSSGroupState groupState;
 static struct HashMap *defines;
 
 static void definesDestructor(void *arg ATTR_UNUSED, char *key,
@@ -106,17 +107,38 @@ static void readStylesheet(struct UserCSS *userCSS, const char *filename,
   }
 }
 
-void initUserCSS(struct UserCSS *userCSS, const char *arg) {
-  userCSS->newGroup                       = 1;
+static void endUserCSSGroup(struct UserCSSGroupState *groupState) {
+  if (groupState->groupOpen) {
+    // Sanity checks
+    if (!groupState->hasActiveMember && groupState->numMembers > 1) {
+      fatal("[config] Each group must have one default active style!");
+    }
+  }
+  memset(groupState, '\0', sizeof *groupState);
+}
 
-  int numMembers                          = 1;
-  int hasActiveMember                     = 0;
-  for (;;) {
+void addUserCSSList(struct UserCSS **tailCSS, const char *arg, struct UserCSSGroupState *groupState) {
+  struct UserCSS *userCSS;
+
+  while (*arg) {
+    // Add new node list
+    check(userCSS = malloc(sizeof(struct UserCSS)));
+    *tailCSS = userCSS;
+    tailCSS = &userCSS->next;
+    userCSS->next = NULL;
+
+    // Pick up where we left off
+    userCSS->newGroup = !groupState->groupOpen;
+    groupState->groupOpen = 1;
+    groupState->numMembers++;
+
+    // All items require a colon delimiter between label and filename
     const char *colon                     = strchr(arg, ':');
     if (!colon) {
       fatal("[config] Incomplete user CSS definition: \"%s\"!", arg);
     }
 
+    // Copy and quote label
     check(userCSS->label                  = malloc(6*(colon - arg) + 1));
     for (const char *src = arg, *dst = userCSS->label;;) {
       if (src == colon) {
@@ -141,6 +163,7 @@ void initUserCSS(struct UserCSS *userCSS, const char *arg) {
       }
     }
 
+    // Copy filename, interpreting group status
     int filenameLen                       = strcspn(colon + 1, ",;");
     char *filename;
     check(filename                        = malloc(filenameLen + 1));
@@ -152,10 +175,10 @@ void initUserCSS(struct UserCSS *userCSS, const char *arg) {
         userCSS->isActivated              = 0;
         break;
       case '+':
-        if (hasActiveMember) {
+        if (groupState->hasActiveMember) {
           fatal("[config] Only one default active style allowed per group!");
         }
-        hasActiveMember                   = 1;
+        groupState->hasActiveMember       = 1;
         userCSS->isActivated              = 1;
         break;
       default:
@@ -166,43 +189,20 @@ void initUserCSS(struct UserCSS *userCSS, const char *arg) {
     readStylesheet(userCSS, filename + 1, (char **)&userCSS->style,
                    &userCSS->styleLen);
     free(filename);
-
     arg                                   = colon + 1 + filenameLen;
-    if (!*arg) {
-      userCSS->next                       = NULL;
-      break;
-    }
-    check(userCSS->next                   = malloc(sizeof(struct UserCSS)));
-    userCSS                               = userCSS->next;
-    userCSS->newGroup                     = *arg++ == ';';
-    if (userCSS->newGroup) {
-      if (!hasActiveMember && numMembers > 1) {
-        // Print error message
-        break;
-      }
-      numMembers                          = 1;
-      hasActiveMember                     = 0;
-    } else {
-      ++numMembers;
-    }
-  }
-  if (!hasActiveMember && numMembers > 1) {
-    fatal("[config] Only one default active style allowed per group!");
-  }
-}
 
-struct UserCSS *newUserCSS(const char *arg) {
-  struct UserCSS *userCSS;
-  check(userCSS = malloc(sizeof(struct UserCSS)));
-  initUserCSS(userCSS, arg);
-  return userCSS;
+    // Handle end of group
+    if (*arg && *arg++ == ';') {
+      endUserCSSGroup(groupState);
+    }
+  }
 }
 
 void parseUserCSS(struct UserCSS **userCSSList, const char *arg) {
-  while (*userCSSList) {
-    userCSSList = &(*userCSSList)->next;
-  }
-  *userCSSList  = newUserCSS(arg);
+  struct UserCSS **tail;
+
+  for (tail = userCSSList; *tail; tail = &(*tail)->next);
+  addUserCSSList(tail, arg, &groupState);
 }
 
 void destroyUserCSS(struct UserCSS *userCSS) {
