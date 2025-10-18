@@ -72,7 +72,12 @@ listed below. This will create executable file `shellinaboxd` in project directo
     ./configure && make
    ```
 
-#### Debian package
+### Documentation
+
+A manual page (`shellinaboxd.1`) is generated as part of the build process and
+rendered as a PDF file (`shellinaboxd.pdf`).
+
+### Debian package
 
 Debian includes a package for shellinabox. See Debian documentation for any OS
 defaults and configuration considerations.
